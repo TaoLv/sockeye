@@ -1675,7 +1675,7 @@ class Translator:
         # (9) Sort the hypotheses within each sentence (normalization for finished hyps may have unsorted them).
         folded_accumulated_scores = scores_accumulated.reshape((self.batch_size,
                                                                 self.beam_size * scores_accumulated.shape[-1]))
-        indices = mx.nd.cast(mx.nd.argsort(folded_accumulated_scores, axis=1), dtype='int32').reshape((-1,))
+        indices = mx.nd.argsort(folded_accumulated_scores, axis=1, dtype='int32').reshape((-1,))
         best_hyp_indices, _ = mx.nd.unravel_index(indices, scores_accumulated.shape) + self.offset
         best_hyp_indices_list.append(best_hyp_indices)
         lengths = lengths.take(best_hyp_indices)
@@ -1881,8 +1881,8 @@ class TopK(mx.gluon.HybridBlock):
         :return: The row indices, column indices and values of the k smallest items in matrix.
         """
         folded_scores = F.reshape(scores, shape=(self.batch_size, self.k * self.vocab_size))
-        values, indices = F.topk(folded_scores, axis=1, k=self.k, ret_typ='both', is_ascend=True)
-        indices = F.reshape(F.cast(indices, 'int32'), shape=(-1,))
+        values, indices = F.topk(folded_scores, axis=1, k=self.k, ret_typ='both', is_ascend=True, dtype='int32')
+        indices = F.reshape(indices, shape=(-1,))
         unraveled = F.unravel_index(indices, shape=(self.batch_size * self.k, self.vocab_size))
         best_hyp_indices, best_word_indices = F.split(unraveled, axis=0, num_outputs=2, squeeze_axis=True)
         best_hyp_indices = best_hyp_indices + offset
