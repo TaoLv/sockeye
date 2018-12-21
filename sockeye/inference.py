@@ -1582,17 +1582,6 @@ class Translator:
 
             # (3) Get beam_size winning hypotheses for each sentence block separately. Only look as
             # far as the active beam size for each sentence.
-           #  folded_scores=mx.ndarray.reshape(scores,shape=(64,10*22666))
-           #  values,indices=mx.ndarray.topk(folded_scores, axis=1, k=10, ret_typ='both', dtype='int32',is_ascend=True)
-           #  indices = mx.ndarray.reshape(indices, shape=(-1,))
-           #  unraveled = mx.ndarray.unravel_index(indices, shape=(64 * 10, 22666))
-           #  best_hyp_indices, best_word_indices = mx.ndarray.split(unraveled, axis=0, num_outputs=2, squeeze_axis=True)
-           #  offset = mx.ndarray.repeat(data=mx.nd.arange(0, 64 * 10, 10, dtype='int32'), repeats=10, axis=0)
-           #  best_hyp_indices = best_hyp_indices + offset
-           #  values = mx.ndarray.reshape(values, shape=(-1, 1))
-           # # print(best_hyp_indices)
-           #  print(best_word_indices)
-            #print(values)
             first_beam_top_scores, first_beam_top_indices = mx.ndarray.topk(scores, axis=1, k=10, ret_typ='both', dtype='int32',is_ascend=True)
             first_beam_top_scores_flattened=mx.ndarray.reshape(first_beam_top_scores,shape=(64,100))
             second_beam_top_scores, second_beam_top_indices = mx.ndarray.topk(first_beam_top_scores_flattened, axis=1, k=10, ret_typ='both', dtype='int32',is_ascend=True)
@@ -1601,39 +1590,11 @@ class Translator:
             offset = mx.ndarray.repeat(data=mx.nd.arange(0, 640 * 22666, 22666, dtype='int32'), repeats=10, axis=0)
             first_beam_top_indices=mx.ndarray.reshape(first_beam_top_indices,shape=-1)+offset;
             new_beam_top_indices=mx.ndarray.take(a=first_beam_top_indices,indices=second_beam_top_indices);
-            # print(new_beam_top_indices)
 
             indices = mx.ndarray.reshape(new_beam_top_indices, shape=(-1,))
             unraveled = mx.ndarray.unravel_index(indices, shape=(64 * 10, 22666))
             best_hyp_indices, best_word_indices = mx.ndarray.split(unraveled, axis=0, num_outputs=2, squeeze_axis=True)
-            # print(best_word_indices)
-            # print(unraveled)
-            #offset = mx.ndarray.repeat(data=mx.nd.arange(0, 64 * 10, 10, dtype='int32'), repeats=10, axis=0)
-            # print(unraveled)
-            #print(best_word_indices)
-            #best_word_indices1=best_word_indices
-            #best_hyp_indices = best_hyp_indices
-            #print(best_hyp_indices)
-            #best_hyp_indices1=best_hyp_indices
             scores_accumulated = mx.ndarray.reshape(second_beam_top_scores, shape=(-1, 1))
-            #values1=values
-           # best_hyp_indices, best_word_indices, scores_accumulated = self._top(scores)
-            # print(best_hyp_indices)
-           # print("iter")
-            #print((best_word_indices==best_word_indices1).min())
-            #print((best_hyp_indices==best_hyp_indices1).min())
-            #print((values1==scores_accumulated).min())
-            #if((best_word_indices==best_word_indices1).min()!=1):
-             #   x=1
-            #if ((best_hyp_indices == best_hyp_indices1).min() != 1):
-                #best_hyp_indices1=best_hyp_indices;
-             #   x=1
-             #   print(best_hyp_indices==best_hyp_indices1);
-            # if ((values1 == scores_accumulated).min() != 1):
-               # x=1
-            #scores_accumulated=values1;
-            #best_hyp_indices=best_hyp_indices1
-            #best_word_indices=best_word_indices1;
             # Constraints for constrained decoding are processed sentence by sentence
             if any(raw_constraint_list):
                 best_hyp_indices, best_word_indices, scores_accumulated, \
