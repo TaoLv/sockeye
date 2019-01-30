@@ -38,6 +38,7 @@ class RNNConfig(Config):
     :param forget_bias: Initial value of forget biases.
     :param lhuc: Apply LHUC (Vilar 2018) to the hidden units of the RNN.
     :param dtype: Data type.
+    :param fused: call MXNet fused RNN API
     """
 
     def __init__(self,
@@ -51,7 +52,8 @@ class RNNConfig(Config):
                  first_residual_layer: int = 2,
                  forget_bias: float = 0.0,
                  lhuc: bool = False,
-                 dtype: str = C.DTYPE_FP32) -> None:
+                 dtype: str = C.DTYPE_FP32,
+                 fused: bool = False) -> None:
         super().__init__()
         self.cell_type = cell_type
         self.num_hidden = num_hidden
@@ -64,6 +66,7 @@ class RNNConfig(Config):
         self.forget_bias = forget_bias
         self.lhuc = lhuc
         self.dtype = dtype
+        self.fused = fused
 
 
 class SequentialRNNCellParallelInput(mx.rnn.SequentialRNNCell):
@@ -100,6 +103,21 @@ class ParallelInputCell(mx.rnn.ModifierCell):
         return output, states
 
 
+class ParallelInputFusedRNN(mx.rnn.ModifierCell):
+    """
+    A modifier cell that accepts two input vectors and concatenates them before
+    calling the Fused RNN. Typically it is used for concatenating the
+    normal and the parallel input in a fused rnn.
+    """
+
+    def __call__(self, inputs, parallel_inputs, states):
+        # inputs/parallel_inputs shape: (1, batch_size, num_hidden)
+        concat_inputs = mx.sym.concat(inputs, parallel_inputs, dim=2)
+        # Fused rnn only supports unroll but not step mode
+        output, states = self.base_cell.unroll(1, concat_inputs, states, layout='TNC')
+        return output, states
+
+
 class ResidualCellParallelInput(mx.rnn.ResidualCell):
     """
     A ResidualCell, where an additional "parallel" input can be given at call
@@ -112,6 +130,51 @@ class ResidualCellParallelInput(mx.rnn.ResidualCell):
         output, states = self.base_cell(concat_inputs, states)
         output = mx.symbol.elemwise_add(output, inputs, name="%s_plus_residual" % output.name)
         return output, states
+
+
+def get_fused_rnn(config: RNNConfig, prefix: str,
+                  parallel_inputs: bool = False,
+                  layers: Optional[Iterable[int]] = None,
+                  bidirectional: Optional[bool] = False) -> mx.rnn.FusedRNNCell:
+    if config.cell_type not in [C.LSTM_TYPE, C.GRU_TYPE]:
+        raise NotImplementedError("%s is not support" % config.cell_type)
+
+    if config.residual:
+        raise NotImplementedError("Residaul connection is not supported")
+
+    if config.lhuc:
+        raise NotImplementedError("LHUC is not supported")
+
+    if config.dropout_states > 0.0 or config.dropout_recurrent > 0.0:
+        raise NotImplementedError("dropout for states and cells is not supported")
+
+    if parallel_inputs:
+        rnn = SequentialRNNCellParallelInput()
+        if not layers:
+            layers = range(config.num_layers)
+        for layer_idx in layers:
+            cell_prefix = "%sl%d_" % (prefix, layer_idx)
+            cell = mx.rnn.FusedRNNCell(config.num_hidden,
+                                       num_layers=1,
+                                       prefix=cell_prefix,
+                                       mode=config.cell_type,
+                                       bidirectional=bidirectional,
+                                       get_next_state=True,
+                                       dropout=config.dropout_inputs,
+                                       forget_bias=config.forget_bias)
+            rnn.add(ParallelInputFusedRNN(cell))
+
+    else:
+        rnn = mx.rnn.FusedRNNCell(config.num_hidden,
+                                  num_layers=config.num_layers,
+                                  prefix=prefix,
+                                  mode=config.cell_type,
+                                  bidirectional=bidirectional,
+                                  get_next_state=True,
+                                  dropout=config.dropout_inputs,
+                                  forget_bias=config.forget_bias)
+
+    return rnn
 
 
 def get_stacked_rnn(config: RNNConfig, prefix: str,
